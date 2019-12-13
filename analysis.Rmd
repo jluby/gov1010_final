@@ -11,23 +11,28 @@ library(tidyverse)
 ```
 
 ```{r}
+# Read in data and slice the information we want
 data <- read_csv('survey_data.csv') %>% 
   slice(3:280)
 ```
 
 ```{r}
+# Establish STEM list
 stem_concentrations <- c("Applied Mathematics", "Astrophysics", "Biomedical Engineering", "Chemical and Physical Biology", "Chemistry", "Chemistry and Physics", "Computer Science", "Earth and Planetary Sciences", "Electrical Engineering", "Environmental Science and Engineering", "Environmental Science and Public Policy", "Human Developmental and Regenerative Biology", "Human Evolutionary Biology", "Integrative Biology", "Mathematics", "Mechanical Engineering", "Molecular and Cellular Biology", "Neuroscience", "Physics", "Statistics")
-order <- c("I attend rarely", "I attend sometimes", "I attend around half the time", "I attend frequently", "I attend very frequently")
 
+# Rename variables for ease of use
 data <- data %>% 
   mutate(STEM = "Non-STEM") %>% 
   rename(gender = Q2, year = Q3, house = Q4, international = Q5, athlete = Q6, work_hours = Q9, attend_hours = Q10, concentration = Q11, honors = Q13, office_hours = Q15, study_sessions = Q16, concentration_lunches = Q17, social_events = Q18, other_concentration_social = Q19, satisfaction = Q20)
 
+# Iterate over concentrations to label STEM concentrations, if they feature anywhere in
+# a student's listed concentrations
 for (i in stem_concentrations){
   data <- mutate(data, STEM = case_when(str_detect(concentration, i) ~ "STEM",
                                 TRUE ~ STEM))
 }
 
+# Establish the data on which we'll model
 data_mod <- data %>% 
   filter(!is.na(Q22)) %>% 
   filter(Q22 != "Prefer not to say") %>% 
@@ -51,15 +56,12 @@ data_mod <- data %>%
                          satisfaction == "Neither agree nor disagree" ~ 2,
                          satisfaction == "Somewhat agree" ~ 3,
                          satisfaction == "Strongly agree" ~ 4))
-  
-
- # mutate(hard_worker = case_when(Q9 >= mean(Q9, na.rm = TRUE) + sd(Q9, na.rm = TRUE) ~ 1,
-  #                               TRUE ~ 0)) %>% 
- # filter(Q9 >= mean(Q9, na.rm = TRUE) + sd(Q9, na.rm = TRUE) | Q9 <= mean(Q9, na.rm = TRUE) - sd(Q9, na.rm = TRUE))
 ```
 
 ```{r}
 library(survey)
+
+# Using the survey package, weight our responses
 
 survey_data_unweighted <- survey::svydesign(ids = ~1, data = data_mod %>% 
                                               filter(gender %in% c("Male", "Female"),
@@ -79,17 +81,14 @@ data.svy.rake <- rake(design = survey_data_unweighted,
                    sample.margins = list(~gender, ~year, ~athlete),
                    population.margins = list(gender.dist, year.dist, athlete.dist))
 
-View(data_mod %>% select(Q22, STEM))
-summary(lm(Q22 ~ (Q2-1) + STEM*(Q2-1) + Q9*(Q2-1) + Q10*(Q2-1), data = data_mod)) # Significant one
-summary(svyglm(Q22 ~ STEM + Q10 + Q2 + Q3 + Q5 + Q6, design = data.svy.rake))
-
-
-summary(svyglm(Q22 ~ gender + year + STEM + attend_hours + work_hours + athlete, design = data.svy.rake))
-
-summary(lm(Q22 ~ gender + year + STEM + work_hours*athlete + attend_hours*athlete + Q15_. + Q16_. + Q17_. + Q18_. + Q20, data = data_mod))
+# Fit a weighted linear model and summarize
+# Adjustments were made to this model throughout
+summary(svyglm(Q22 ~ STEM + work_hours + attend_hours, design = data.svy.rake))
 ```
 
 ```{r}
+# Develop summary stastics
+
 relationship_sum <- data_mod %>% 
   filter(!is.na(Q22),
          Q22 != "Prefer not to say",
@@ -142,11 +141,13 @@ STEM_sum <- data_mod %>%
   mutate(percentage = round(count/sum(count) * 100, 2)) %>% 
   mutate(STEM = ifelse(STEM == 1, "STEM", "Non-STEM"))
 
-work_hist <- ggplot(data, aes(x=as.numeric(work_hours))) + geom_histogram(binwidth = 1)
+library(ggthemes)
 
-attend_hist <- ggplot(data, aes(x=as.numeric(attend_hours))) + geom_histogram(binwidth=1)
+work_hist <- ggplot(data, aes(x=as.numeric(work_hours))) + geom_histogram(binwidth = 5) + theme_fivethirtyeight() + labs(x="Hours of Work Outside of Class", y="Count") + theme(axis.title=element_text(size=12))
 
-total_work_hist <- ggplot(data, aes(x=as.numeric(work_hours)+as.numeric(attend_hours))) + geom_histogram(binwidth=5)
+attend_hist <- ggplot(data, aes(x=as.numeric(attend_hours))) + geom_histogram(binwidth=3) + theme_fivethirtyeight() + labs(x="Hours of Class Attended", y="Count") + theme(axis.title=element_text(size=12))
+
+total_work_hist <- ggplot(data, aes(x=as.numeric(work_hours)+as.numeric(attend_hours))) + geom_histogram(binwidth=5) + labs(x="Total Hours Dedicated to Work", y = "Count")
 attend_hist
 ```
 
